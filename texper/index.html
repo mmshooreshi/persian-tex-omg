@@ -1,0 +1,227 @@
+<!doctype html>
+<html lang="fa" dir="rtl">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>XePersian \lr{} Auto-Wrapper — Pro Workbench + Rules</title>
+  <style>
+    :root{--bg:#0b0f14;--panel:#0f172a;--muted:#94a3b8;--fg:#e5e7eb;--acc:#22d3ee;--border:#1f2937;--good:#16a34a;--warn:#f59e0b;--bad:#ef4444}
+    *{box-sizing:border-box}
+    html,body{height:100%}
+    body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.5 ui-sans-serif,system-ui,"Segoe UI",Roboto}
+    header{padding:14px 18px;background:#0d1320;border-bottom:1px solid var(--border)}
+    h1{font-size:18px;margin:0 0 4px 0}
+    .hint{font-size:12px;color:var(--muted)}
+    .controls{display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:10px 14px;border-bottom:1px solid var(--border)}
+    .btn{background:#0b1323;border:1px solid var(--border);color:var(--fg);border-radius:10px;padding:8px 12px;cursor:pointer}
+    .btn.primary{background:linear-gradient(135deg,#0ea5e9,#22d3ee);color:#031218;border:none}
+    .btn.small{padding:4px 8px;font-size:12px}
+    .wrap{display:grid;grid-template-columns:1.2fr 1fr;gap:12px;padding:12px}
+    .panel{background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:12px}
+    .panel h2{margin:0 0 8px 0;font-size:14px}
+    textarea,pre,code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace}
+    textarea{width:100%;height:50vh;resize:vertical;background:#0a0f1a;color:var(--fg);border:1px solid var(--border);border-radius:10px;padding:10px}
+    pre{white-space:pre-wrap;word-break:break-word;margin:0;max-height:50vh;overflow:auto;background:#0a0f1a;border:1px solid var(--border);border-radius:10px;padding:10px}
+    .row{display:flex;gap:8px;align-items:center;justify-content:space-between;margin-bottom:6px}
+    .muted{color:var(--muted)}
+    .grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+    details{border:1px dashed #334155;border-radius:10px;padding:8px;background:#0a0f1a}
+    summary{cursor:pointer}
+    .tag{background:#0b1220;border:1px solid #334155;color:#93c5fd;border-radius:6px;padding:2px 6px;font-size:12px}
+    .badge{display:inline-block;padding:2px 6px;border-radius:6px;font-size:12px;margin-inline-start:6px;background:#0b1220;border:1px solid #334155;color:#93c5fd}
+    .log{height:24vh;overflow:auto;background:#0a0f1a;border-radius:10px;padding:10px;border:1px dashed #334155}
+    .list{max-height:42vh;overflow:auto;border:1px solid var(--border);border-radius:10px;background:#0a0f1a}
+    .item{padding:8px 10px;border-bottom:1px solid #172036}
+    .item:last-child{border-bottom:none}
+    .pill{display:inline-block;padding:2px 6px;border-radius:999px;font-size:11px;border:1px solid #334155;background:#0b1220;color:#cbd5e1;margin-inline-start:6px}
+    .ok{color:var(--good)} .warn{color:var(--warn)} .bad{color:var(--bad)}
+    .kv{font-family:inherit;font-size:12px;color:#cbd5e1}
+    .copybtn{float:left;margin-inline-end:8px}
+    .flex{display:flex;gap:8px;align-items:center}
+    .fill{flex:1}
+    .small{font-size:12px}
+
+    /* Modal */
+    .modal-backdrop{position:fixed;inset:0;background:rgba(0,0,0,.55);display:none;align-items:center;justify-content:center;z-index:50}
+    .modal{width:min(900px,95vw);max-height:90vh;overflow:auto;background:#0f172a;border:1px solid #1f2937;border-radius:14px;padding:14px}
+    .table{width:100%;border-collapse:collapse}
+    .table th,.table td{border-bottom:1px solid #1f2937;padding:6px;vertical-align:top}
+    input[type="text"],select{width:100%;background:#0a0f1a;color:#e5e7eb;border:1px solid #1f2937;border-radius:8px;padding:6px}
+    .rowbtns button{margin-inline-start:6px}
+  </style>
+</head>
+<body>
+<header>
+  <h1>XePersian <span class="badge">\\lr{…}</span> Auto-Wrapper — Pro Workbench</h1>
+  <div class="hint">Edit anywhere • Copy anything • Collapsed intermediates • Ruleset modal (find/replace, enable, order) • Client+Edge with logs</div>
+</header>
+
+<div class="controls">
+  <button id="runClient" class="btn primary">Run (Client)</button>
+  <button id="runEdge" class="btn">Run (Edge API)</button>
+  <button id="applyEdits" class="btn">Apply Edits → Input</button>
+  <button id="openRules" class="btn">Rules…</button>
+  <label class="kv"><input type="checkbox" id="debug"> Debug</label>
+  <label class="kv"><input type="checkbox" id="dryrun"> Dry-run</label>
+  <label class="kv"><input type="checkbox" id="chem"> Chem subscripts</label>
+  <label class="kv"><input type="checkbox" id="live"> Live (type → parse)</label>
+  <span class="tag">idempotent</span><span class="tag">math-safe</span><span class="tag">verbatim-safe</span>
+</div>
+
+<div class="wrap">
+  <!-- LEFT: Input & Intermediates -->
+  <div class="panel">
+    <div class="row">
+      <h2>ورودی LaTeX</h2>
+      <div class="flex">
+        <button id="copyInput" class="btn small">Copy</button>
+        <span class="muted small">paste .tex here</span>
+      </div>
+    </div>
+    <textarea id="input" spellcheck="false"></textarea>
+
+    <div style="height:8px"></div>
+
+    <details open>
+      <summary><strong>Config</strong> <span class="muted">(units/keywords)</span></summary>
+      <div style="height:8px"></div>
+      <textarea id="units" class="small" style="height:110px">% comma-separated
+°C,°F,rpm,V,A,mA,μL,uL,mL,L,mg,g,kg,nm,μm,um,mm,cm,h,hr,min,s,kDa,Da,OD,UV,DNA,RNA,PCR,BHI,TSB,TSA,PDA,YPD,YPG,SDS-PAGE,Log,APS,TEMED,EtBr,Western,Blot
+</textarea>
+    </details>
+
+    <div style="height:8px"></div>
+
+    <details open>
+      <summary><strong>Intermediates</strong> <span class="muted">(collapsed panes)</span></summary>
+      <div style="height:8px"></div>
+
+      <details>
+        <summary><strong>Skip Ranges</strong> <span class="muted">comments, math, envs, protected args, existing \lr</span></summary>
+        <div class="list" id="skipList"></div>
+      </details>
+
+      <div style="height:8px"></div>
+
+      <details open>
+        <summary><strong>Segments</strong> <span class="muted">editable chunks</span></summary>
+        <div id="segmentsPanel"></div>
+      </details>
+
+      <div style="height:8px"></div>
+
+      <details>
+        <summary><strong>Tokens of Selected Segment</strong></summary>
+        <div class="row">
+          <select id="segSelect" class="fill"></select>
+          <button id="copyTokens" class="btn small">Copy Tokens JSON</button>
+        </div>
+        <pre id="tokensView"></pre>
+      </details>
+    </details>
+  </div>
+
+  <!-- RIGHT: Output & Logs -->
+  <div class="panel">
+    <div class="row">
+      <h2>خروجی</h2>
+      <div class="flex">
+        <button id="copyOutput" class="btn small">Copy</button>
+      </div>
+    </div>
+    <pre id="output"></pre>
+
+    <div style="height:8px"></div>
+
+    <h2>Debug Log</h2>
+    <div id="log" class="log"></div>
+  </div>
+</div>
+
+<!-- Rules Modal -->
+<div id="rulesModal" class="modal-backdrop" aria-hidden="true">
+  <div class="modal">
+    <div class="row">
+      <h2>Ruleset (global find/replace)</h2>
+      <div class="flex">
+        <button id="exportRules" class="btn small">Export JSON</button>
+        <button id="importRules" class="btn small">Import JSON</button>
+        <button id="closeRules" class="btn">Close</button>
+      </div>
+    </div>
+    <p class="muted small">Rules run in list order (top → bottom). Enable/disable, edit, delete, and reorder. Phases: <b>pre</b> (before parsing) or <b>post</b> (after parsing). Scope: <b>all</b> (entire text) or <b>rewritableOnly</b> (only non-skipped segments).</p>
+
+    <table class="table" id="rulesTable">
+      <thead>
+        <tr>
+          <th>#</th><th>Enabled</th><th>Name</th><th>Pattern</th><th>Replace</th><th>Regex / Flags</th><th>Phase</th><th>Scope</th><th>Order</th><th>Actions</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+
+    <div style="height:8px"></div>
+
+    <details open>
+      <summary><strong>Add / Edit Rule</strong></summary>
+      <div class="grid2" style="margin-top:8px">
+        <div>
+          <label class="small">Name</label>
+          <input id="rName" type="text" placeholder="e.g. Fix Na2HPO4 → Na$_2$HPO$_4$">
+        </div>
+        <div>
+          <label class="small">Enabled</label>
+          <select id="rEnabled">
+            <option value="true">true</option>
+            <option value="false">false</option>
+          </select>
+        </div>
+        <div>
+          <label class="small">Pattern</label>
+          <input id="rPattern" type="text" placeholder="string or regex body">
+        </div>
+        <div>
+          <label class="small">Replace</label>
+          <input id="rReplace" type="text" placeholder="replacement">
+        </div>
+        <div>
+          <label class="small">Regex</label>
+          <select id="rRegex">
+            <option value="false">false (literal)</option>
+            <option value="true">true (use flags)</option>
+          </select>
+        </div>
+        <div>
+          <label class="small">Flags (if regex)</label>
+          <input id="rFlags" type="text" placeholder="e.g. gi">
+        </div>
+        <div>
+          <label class="small">Phase</label>
+          <select id="rPhase">
+            <option value="pre">pre</option>
+            <option value="post">post</option>
+          </select>
+        </div>
+        <div>
+          <label class="small">Scope</label>
+          <select id="rScope">
+            <option value="all">all</option>
+            <option value="rewritableOnly">rewritableOnly</option>
+          </select>
+        </div>
+      </div>
+      <div class="row" style="margin-top:8px">
+        <div class="flex">
+          <button id="addRule" class="btn primary">Add Rule</button>
+          <button id="updateRule" class="btn">Update Selected</button>
+          <button id="clearForm" class="btn">Clear Form</button>
+        </div>
+        <div class="muted small">Select a row to edit</div>
+      </div>
+    </details>
+  </div>
+</div>
+
+<script src="script.js"></script>
+</body>
+</html>

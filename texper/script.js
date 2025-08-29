@@ -340,7 +340,8 @@
     text = text.replace(/—/g, '\\lr{—}');
     text = text.replace(/–/g, '\\lr{–}');
     text = text.replace(/٪/g, '\\lr{٪}');
-    
+    text = text.replace(/•/g, '\\lr{•}');
+
     
     // 1) find skips
     const comments = findCommentRanges(text);
@@ -477,7 +478,7 @@ function buildRewritableSegment(text, baseIndex, config) {
 
   function findEnvRanges(s, envs){ const res=[]; for(const e of envs){ const re=new RegExp(String.raw`\\begin\{${escapeRx(e)}\}([\s\S]*?)\\end\{${escapeRx(e)}\}`,'g'); let m; while((m=re.exec(s))) res.push([m.index, m.index+m[0].length]); } return res; }
   function findProtectedCommandArgRanges(s){
-    const one = ['fbox','setlatintextfont','usepackage','settextfont','documentclass','end','begin','url','path','label','ref','cite','includegraphics','input','include','bibliography','bibliographystyle'];
+    const one = ['rowcolor','fbox','setlatintextfont','usepackage','settextfont','documentclass','end','begin','url','path','label','ref','cite','includegraphics','input','include','bibliography','bibliographystyle'];
     const first = ['href']; const res=[];
     function matchBraces(str,pos){ if(str[pos]!=='{') return [pos,false]; let d=0; for(let i=pos;i<str.length;i++){ if(str[i]==='\\'){i++;continue;} if(str[i]==='{') d++; else if(str[i]==='}'){ d--; if(d===0) return [i,true]; } } return [pos,false]; }
     // function scan(cmd, all=true){ const re=new RegExp(String.raw`\\${escapeRx(cmd)}\s*(\[[^\]]*\]\s*)*`,'g'); let m; while((m=re.exec(s))){ let p=re.lastIndex,a=0; for(let k=0;k<6;k++){ while(p<s.length && /\s/.test(s[p])) p++; if(s[p]!=='{') break; const [e,ok]=matchBraces(s,p); if(!ok) break; if(all || a===0) res.push([p,e+1]); a++; p=e+1; if(!all) break; } } }

@@ -342,7 +342,7 @@
     const verbatimLike = findEnvRanges(text, ['verbatim','lstlisting','minted','alltt']);
     const protectedArgs = findProtectedCommandArgRanges(text);
     const existingLR = findExistingLRRanges(text);
-    const mergedSkips = mergeRanges([...comments, ...math, ...verbatimLike, ...protectedArgs, ...existingLR]);
+    const mergedSkips = mergeRanges([...comments, ...math, ...verbatimLike, ...protectedArgs, ...existingLR, ...commandRanges ]);
 
     // 2) split + rewrite segments (with pre rules rewritableOnly)
     const segments = [];
@@ -450,6 +450,16 @@
     function scan(cmd, all=true){ const re=new RegExp(String.raw`\\${escapeRx(cmd)}\s*(\[[^\]]*\]\s*)*`,'g'); let m; while((m=re.exec(s))){ let p=re.lastIndex,a=0; for(let k=0;k<6;k++){ while(p<s.length && /\s/.test(s[p])) p++; if(s[p]!=='{') break; const [e,ok]=matchBraces(s,p); if(!ok) break; if(all || a===0) res.push([p,e+1]); a++; p=e+1; if(!all) break; } } }
     one.forEach(c=>scan(c,true)); first.forEach(c=>scan(c,false)); return res;
   }
+  function findCommandRanges(s) {
+  const res = [];
+  const re = /\\[a-zA-Z@]+(\s*\[[^\]]*\])?(\s*\{[^}]*\})?/g;
+  let m;
+  while ((m = re.exec(s))) {
+    res.push([m.index, m.index + m[0].length]);
+  }
+  return res;
+}
+
   function findExistingLRRanges(s){
     const res=[]; const re=/\\lr\s*\{/g; let m;
     while((m=re.exec(s))){ const bracePos=m.index+m[0].length-1; const [end,ok]=matchBrace(s,bracePos); if(ok) res.push([m.index, end+1]); }
@@ -476,7 +486,9 @@ function isLatinWord(tok){ return /^[\p{Script=Latin}][\p{Script=Latin}\d_\-\/+\
   function isJoiner(tok){ return /^[~\-–\/:+]$/.test(tok.t) || /^[ \t\r\n]+$/.test(tok.t); }
   function isUnit(tok,unitRe){ return unitRe.test(tok.t); }
   function isPhraseToken(tok,unitRe){ return isLatinWord(tok)||isDigit(tok)||isUnit(tok,unitRe)||isJoiner(tok); }
-  function isCandidateStart(tok,unitRe){ return isLatinWord(tok)||isDigit(tok)||isUnit(tok,unitRe); }
+  function isCandidateStart(tok,unitRe){ 
+    if (tok.t.startsWith('\\')) return false;
+    return isLatinWord(tok)||isDigit(tok)||isUnit(tok,unitRe); }
   function normalizeChem(text){ return text.replace(/\b([A-Z][a-z]?)(\d+)\b/g,(_,e,n)=>`${e}$_${n}$`); }
 })();
 

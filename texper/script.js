@@ -342,6 +342,7 @@
     const verbatimLike = findEnvRanges(text, ['verbatim','lstlisting','minted','alltt']);
     const protectedArgs = findProtectedCommandArgRanges(text);
     const existingLR = findExistingLRRanges(text);
+    const commandRanges = findCommandRanges(text);
     const mergedSkips = mergeRanges([...comments, ...math, ...verbatimLike, ...protectedArgs, ...existingLR, ...commandRanges ]);
 
     // 2) split + rewrite segments (with pre rules rewritableOnly)

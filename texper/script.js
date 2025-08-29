@@ -479,3 +479,14 @@ function isLatinWord(tok){ return /^[\p{Script=Latin}][\p{Script=Latin}\d_\-\/+\
   function isCandidateStart(tok,unitRe){ return isLatinWord(tok)||isDigit(tok)||isUnit(tok,unitRe); }
   function normalizeChem(text){ return text.replace(/\b([A-Z][a-z]?)(\d+)\b/g,(_,e,n)=>`${e}$_${n}$`); }
 })();
+
+
+
+
+function applyEditsBackToInput(edits) {
+  const input = document.getElementById('input');
+  if (!input) return;
+  // Just put the edited text back
+  input.value = edits;
+  console.log("[applyEditsBackToInput] updated input:", edits);
+}

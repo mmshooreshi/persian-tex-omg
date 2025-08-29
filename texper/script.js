@@ -481,41 +481,53 @@ function buildRewritableSegment(text, baseIndex, config) {
     const first = ['href']; const res=[];
     function matchBraces(str,pos){ if(str[pos]!=='{') return [pos,false]; let d=0; for(let i=pos;i<str.length;i++){ if(str[i]==='\\'){i++;continue;} if(str[i]==='{') d++; else if(str[i]==='}'){ d--; if(d===0) return [i,true]; } } return [pos,false]; }
     // function scan(cmd, all=true){ const re=new RegExp(String.raw`\\${escapeRx(cmd)}\s*(\[[^\]]*\]\s*)*`,'g'); let m; while((m=re.exec(s))){ let p=re.lastIndex,a=0; for(let k=0;k<6;k++){ while(p<s.length && /\s/.test(s[p])) p++; if(s[p]!=='{') break; const [e,ok]=matchBraces(s,p); if(!ok) break; if(all || a===0) res.push([p,e+1]); a++; p=e+1; if(!all) break; } } }
-    function scan(cmd, all=true){
-  // Match command like \documentclass, \usepackage, \setlatintextfont, etc.
-  const re=new RegExp(String.raw`\\${escapeRx(cmd)}\s*`,'g');
+function scan(cmd, all=true){
+  const re = new RegExp(String.raw`\\${escapeRx(cmd)}\s*`, 'g');
   let m;
-  while((m=re.exec(s))){
+  while ((m = re.exec(s))) {
     let p = re.lastIndex;
 
-    // --- 1) Skip optional argument [ ... ] if present ---
-    while (p < s.length && /\s/.test(s[p])) p++;
-    if (s[p] === '[') {
-      let depth = 0, start = p;
-      for (; p < s.length; p++) {
-        if (s[p] === '[') depth++;
-        else if (s[p] === ']') {
-          depth--;
-          if (depth === 0) { 
-            res.push([start, p+1]); // mark [ ... ] as protected
-            p++; 
-            break; 
+    // loop: absorb [ ... ] and { ... } in ANY order, multiple times
+    for (let guard = 0; guard < 20; guard++) {
+      let advanced = false;
+
+      // --- optional [ ... ] (may appear before or after braces, multiple) ---
+      while (p < s.length) {
+        while (p < s.length && /\s/.test(s[p])) p++;
+        if (s[p] !== '[') break;
+        let depth = 0, start = p;
+        for (; p < s.length; p++) {
+          if (s[p] === '[') depth++;
+          else if (s[p] === ']') {
+            depth--;
+            if (depth === 0) { 
+              res.push([start, p + 1]); // protect [ ... ]
+              p++;
+              advanced = true;
+              break;
+            }
           }
         }
       }
-    }
 
-    // --- 2) Skip mandatory braces { ... } ---
-    let a=0;
-    for(let k=0;k<6;k++){
-      while(p<s.length && /\s/.test(s[p])) p++;
-      if(s[p] !== '{') break;
-      const [e,ok] = matchBraces(s,p);
-      if(!ok) break;
-      if(all || a===0) res.push([p,e+1]);
-      a++;
-      p = e+1;
-      if(!all) break;
+      // --- mandatory { ... } (0..n, protect first only if all==false) ---
+      let a = 0;
+      while (p < s.length) {
+        while (p < s.length && /\s/.test(s[p])) p++;
+        if (s[p] !== '{') break;
+
+        const [e, ok] = matchBraces(s, p);
+        if (!ok) break;
+
+        if (all || a === 0) res.push([p, e + 1]); // protect { ... }
+        a++;
+        p = e + 1;
+        advanced = true;
+
+        if (!all) break; // only the first { ... } if all==false
+      }
+
+      if (!advanced) break; // nothing more to absorb
     }
   }
 }

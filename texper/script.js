@@ -460,8 +460,18 @@
 
   // ---------- Tokenizer ----------
   function tokenize(s){ const arr=[]; const re=/([\p{Script=Latin}][\p{Script=Latin}\d_\-\/+\.]*|[\p{Nd}]+(?:[.,:][\p{Nd}]+)*|[~\-–\/:+]|[ \t\r\n]+|.)/gu; let m; while((m=re.exec(s))) arr.push({t:m[0]}); return arr; }
-  function buildUnitRegex(units){ const esc=units.map(u=>u.replace(/[-/\\^$*+?.()|[\]{}]/g,'\\$&')); return new RegExp(`^(?:${esc.join('|')})$`,'iu'); }
-  function isLatinWord(tok){ return /^[\p{Script=Latin}][\p{Script=Latin}\d_\-\/+\.]*$/u.test(tok.t); }
+//   function buildUnitRegex(units){ const esc=units.map(u=>u.replace(/[-/\\^$*+?.()|[\]{}]/g,'\\$&')); return new RegExp(`^(?:${esc.join('|')})$`,'iu'); }
+function buildUnitRegex() {
+  const units = [
+    "°C","°F","rpm","V","A","mA","μL","uL","mL","L","mg","g","kg",
+    "nm","μm","um","mm","cm","h","hr","min","s","kDa","Da",
+    "OD","UV","DNA","RNA","PCR","BHI","TSB","TSA","PDA","YPD","YPG",
+    "SDS-PAGE","Log","APS","TEMED","EtBr","Western","Blot"
+  ];
+  return new RegExp(`^(?:${units.join("|")})$`, "iu");
+}
+  
+function isLatinWord(tok){ return /^[\p{Script=Latin}][\p{Script=Latin}\d_\-\/+\.]*$/u.test(tok.t); }
   function isDigit(tok){ return /^[\p{Nd}]+(?:[.,:][\p{Nd}]+)*$/u.test(tok.t); }
   function isJoiner(tok){ return /^[~\-–\/:+]$/.test(tok.t) || /^[ \t\r\n]+$/.test(tok.t); }
   function isUnit(tok,unitRe){ return unitRe.test(tok.t); }

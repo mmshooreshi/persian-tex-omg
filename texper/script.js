@@ -334,8 +334,14 @@
   function pipeline(text, config, logger){
     const t0 = performance.now();
     // Pre rules: phase=pre, scope=all → whole text first
-    text = applyRulesList(text, rules, 'pre', 'all', logger, 'PRE-ALL');
+    text = normalizeBullets(text);  // <<< add this line
 
+    text = applyRulesList(text, rules, 'pre', 'all', logger, 'PRE-ALL');
+    text = text.replace(/—/g, '\\lr{—}');
+    text = text.replace(/–/g, '\\lr{–}');
+    text = text.replace(/٪/g, '\\lr{٪}');
+    
+    
     // 1) find skips
     const comments = findCommentRanges(text);
     const math = findMathRanges(text);
@@ -416,41 +422,62 @@
   }
 
   // ---------- Segment builder ----------
-  function buildRewritableSegment(text, baseIndex, config){
-    const units = buildUnitRegex(config.units);
-    const tokens = tokenize(text);
-    const out = [];
-    let i = 0;
-    while (i < tokens.length){
-      const tk = tokens[i];
-      if (!isCandidateStart(tk, units)){ out.push(tk.t); i++; continue; }
-      let j = i, saw = isWord(tokens[j]) || isUnit(tokens[j], units);
+function buildRewritableSegment(text, baseIndex, config) {
+  const normText = normalizePersianDigits(text);  // << here
+  const units = buildUnitRegex(config.units);
+  const tokens = tokenize(normText);
+  const out = [];
+  let i = 0;
 
-      while (j+1 < tokens.length && isPhraseToken(tokens[j+1], units)){
-        j++; 
-        // if (isLatinWord(tokens[j]) || isUnit(tokens[j], units)) saw = true;
-        if (isWord(tokens[j]) || isUnit(tokens[j], units) || isDigit(tokens[j])) saw = true;
+  while (i < tokens.length) {
+    const tk = tokens[i];
+    if (!isCandidateStart(tk, units)) { out.push(tk.t); i++; continue; }
+    let j = i, saw = isWord(tokens[j]) || isUnit(tokens[j], units) || isDigit(tokens[j]);
 
-
-      }
-      while (j > i && isJoiner(tokens[j])) j--;
-      if (!saw){ out.push(tokens[i].t); i++; continue; }
-      const phrase = tokens.slice(i, j+1).map(x=>x.t).join('');
-      const normalized = config.normalizeChem ? normalizeChem(phrase) : phrase;
-      if (config.dryRun) out.push('«', normalized, '»'); else out.push('\\lr{', normalized, '}');
-      i = j+1;
+    while (j+1 < tokens.length && isPhraseToken(tokens[j+1], units)) {
+      j++;
+      if (isWord(tokens[j]) || isUnit(tokens[j], units) || isDigit(tokens[j])) saw = true;
     }
-    return { type:'rewritable', start:baseIndex, end:baseIndex+text.length, text, tokens, rewritten: out.join('') };
+    while (j > i && isJoiner(tokens[j])) j--;
+    if (!saw) { out.push(tokens[i].t); i++; continue; }
+
+    const phrase = tokens.slice(i, j+1).map(x=>x.t).join('');
+    const normalized = config.normalizeChem ? normalizeChem(phrase) : phrase;
+    if (config.dryRun) out.push('«', normalized, '»'); else out.push('\\lr{', normalized, '}');
+    i = j+1;
   }
+  return { type:'rewritable', start:baseIndex, end:baseIndex+text.length, text, tokens, rewritten: out.join('') };
+}
+
 
   // ---------- Range finders (same as before) ----------
   function mergeRanges(r){ if(!r.length) return []; r.sort((a,b)=>a[0]-b[0]||a[1]-b[1]); const o=[r[0].slice()]; for(let i=1;i<r.length;i++){const L=o[o.length-1],C=r[i]; if(C[0]<=L[1]) L[1]=Math.max(L[1],C[1]); else o.push(C.slice());} return o; }
   function findCommentRanges(s){ const res=[]; for(let i=0;i<s.length;i++){ if (s[i]==='%' && !(i>0 && s[i-1]==='\\')){ const st=i; while(i<s.length && s[i]!=='\n') i++; res.push([st,i]); } } return res; }
   function scanPairs(s, openRe, closeRe, out, ignoreEsc=false){ let m; openRe.lastIndex=0; while((m=openRe.exec(s))){ const st=m.index; if(ignoreEsc && st>0 && s[st-1]==='\\') continue; closeRe.lastIndex=openRe.lastIndex; const c=closeRe.exec(s); if(!c) break; out.push([st, c.index+c[0].length]); openRe.lastIndex=c.index+c[0].length; } }
-  function findMathRanges(s){ const res=[]; scanPairs(s,/\$\$/g,/\$\$/g,res); scanPairs(s,/\$/g,/\$/g,res,true); scanPairs(s,/\\\(/g,/\\\)/g,res); scanPairs(s,/\\\[/g,/\\\]/g,res); return res; }
+  function findMathRangess(s){ const res=[]; scanPairs(s,/\$\$/g,/\$\$/g,res); scanPairs(s,/\$/g,/\$/g,res,true); scanPairs(s,/\\\(/g,/\\\)/g,res); scanPairs(s,/\\\[/g,/\\\]/g,res); return res; }
+  function findMathRanges(s){
+  const all = [];
+  scanPairs(s,/\$\$/g,/\$\$/g,all);
+  scanPairs(s,/\$/g,/\$/g,all,true);
+  scanPairs(s,/\\\(/g,/\\\)/g,all);
+  scanPairs(s,/\\\[/g,/\\\]/g,all);
+
+  // filter out simple subscripts ( $_2$ or $_{2}$ ) next to Latin letters
+  const res = [];
+  for (const [st,en] of all){
+    const inner = s.slice(st+1, en-1); // between the $...$
+    const simpleSub = /^_\{?\d+\}?$/.test(inner);
+    const leftLatin  = st>0 && /[A-Za-z]$/.test(s.slice(Math.max(0,st-1), st));
+    const rightLatin = en<s.length && /^[A-Za-z]/.test(s.slice(en, en+1));
+    if (simpleSub && (leftLatin || rightLatin)) continue; // keep in rewritable text
+    res.push([st,en]);
+  }
+  return res;
+}
+
   function findEnvRanges(s, envs){ const res=[]; for(const e of envs){ const re=new RegExp(String.raw`\\begin\{${escapeRx(e)}\}([\s\S]*?)\\end\{${escapeRx(e)}\}`,'g'); let m; while((m=re.exec(s))) res.push([m.index, m.index+m[0].length]); } return res; }
   function findProtectedCommandArgRanges(s){
-    const one = ['setlatintextfont','usepackage','settextfont','documentclass','end','begin','url','path','label','ref','cite','includegraphics','input','include','bibliography','bibliographystyle'];
+    const one = ['fbox','setlatintextfont','usepackage','settextfont','documentclass','end','begin','url','path','label','ref','cite','includegraphics','input','include','bibliography','bibliographystyle'];
     const first = ['href']; const res=[];
     function matchBraces(str,pos){ if(str[pos]!=='{') return [pos,false]; let d=0; for(let i=pos;i<str.length;i++){ if(str[i]==='\\'){i++;continue;} if(str[i]==='{') d++; else if(str[i]==='}'){ d--; if(d===0) return [i,true]; } } return [pos,false]; }
     // function scan(cmd, all=true){ const re=new RegExp(String.raw`\\${escapeRx(cmd)}\s*(\[[^\]]*\]\s*)*`,'g'); let m; while((m=re.exec(s))){ let p=re.lastIndex,a=0; for(let k=0;k<6;k++){ while(p<s.length && /\s/.test(s[p])) p++; if(s[p]!=='{') break; const [e,ok]=matchBraces(s,p); if(!ok) break; if(all || a===0) res.push([p,e+1]); a++; p=e+1; if(!all) break; } } }
@@ -516,14 +543,44 @@ function findCommandRanges(s) {
   function escapeRx(x){ return x.replace(/[-/\\^$*+?.()|[\]{}]/g,'\\$&'); }
 
   // ---------- Tokenizer ----------
-  
+
+function normalizeBullets(s) {
+  // Replace \item (not already with optional arg) → \item[\lr{•}]
+  return s.replace(/(^|\n)\s*\\item(?!\[)/g, '$1\\item[\\lr{•}]');
+}
+
+
+function normalizePersianDigits(s) {
+  const persianDigits = '۰۱۲۳۴۵۶۷۸۹';
+  const arabicDigits  = '٠١٢٣٤٥٦٧٨٩';
+
+  // Case 1: Persian digits next to Arabic decimal separator "٫"
+  s = s.replace(/([۰-۹٠-٩]+)٫([۰-۹٠-٩]+)/g, (m,a,b) => {
+    const toLatin = d =>
+      persianDigits.includes(d) ? persianDigits.indexOf(d) :
+      arabicDigits.includes(d) ? arabicDigits.indexOf(d) :
+      d;
+    return [...a].map(toLatin).join('') + '.' + [...b].map(toLatin).join('');
+  });
+
+//   Case 2: Just normalize plain Persian/Arabic digits (but DO NOT touch if dot is used!)
+//   → This leaves "۲.۱" intact.
+  return s;
+}
+
 function tokenize(s) {
   const arr = [];
-  const re = /(°[CF]|~?(?:[\p{Script=Latin}\p{Script=Greek}][\p{Script=Latin}\p{Script=Greek}\d_\-\/+\.°μ]*)|~?-?\d+(?:[.,:]\d+)*|[\-–\/:+]|[ \t\r\n]+|.)/gu;
-
+  // Add subscript token FIRST so it’s matched atomically
+  const re = /(\$_\{?\d+\}?\$)|(°[CF]|~?(?:[\p{Script=Latin}\p{Script=Greek}][\p{Script=Latin}\p{Script=Greek}\d_\-\/+\.°μ–—]*)|~?-?[0-9۰-۹٠-٩]+(?:[.,٫:][0-9۰-۹٠-٩]+)*|[–—\-\/:+]|[ \t\r\n]+|.)/gu;
   let m;
   while ((m = re.exec(s))) arr.push({ t: m[0] });
   return arr;
+}
+
+function isSub(tok){ return /^\$_\{?\d+\}?\$$/.test(tok.t); }
+
+function isPhraseToken(tok, unitRe){
+  return isWord(tok) || isDigit(tok) || isUnit(tok, unitRe) || isJoiner(tok) || isSub(tok);
 }
 
 //   function buildUnitRegex(units){ const esc=units.map(u=>u.replace(/[-/\\^$*+?.()|[\]{}]/g,'\\$&')); return new RegExp(`^(?:${esc.join('|')})$`,'iu'); }
@@ -539,11 +596,17 @@ function buildUnitRegex() {
   
 function isLatinWord(tok){ return /^[\p{Script=Latin}][\p{Script=Latin}\d_\-\/+\.]*$/u.test(tok.t); }
 //   function isDigit(tok){ return /^[\p{Nd}]+(?:[.,:][\p{Nd}]+)*$/u.test(tok.t); }
-  function isDigit(tok){ return /^~?-?[\p{Nd}]+(?:[.,:]\d+)*$/u.test(tok.t); }
+//   function isDigit(tok){ return /^~?-?[\p{Nd}]+(?:[.,:]\d+)*$/u.test(tok.t); }
+  function isDigit(tok){ return /^~?-?[0-9]+(?:[.,:][0-9]+)*$/u.test(tok.t); }
 
-  function isJoiner(tok){ return /^[~\-–\/:+]$/.test(tok.t) || /^[ \t\r\n]+$/.test(tok.t); }
+//   function isJoiner(tok){ return /^[~\-–\/:+]$/.test(tok.t) || /^[ \t\r\n]+$/.test(tok.t); }
+  function isJoiner(tok) {
+  return /^[~\-–—\/:+]$/.test(tok.t) || /^[ \t\r\n]+$/.test(tok.t);
+}
+
+
   function isUnit(tok,unitRe){ return unitRe.test(tok.t); }
-  function isPhraseToken(tok,unitRe){ return isWord(tok)||isDigit(tok)||isUnit(tok,unitRe)||isJoiner(tok); }
+  function isPhraseTokenPrev(tok,unitRe){ return isWord(tok)||isDigit(tok)||isUnit(tok,unitRe)||isJoiner(tok); }
   function isCandidateStart(tok,unitRe){ 
     if (tok.t.startsWith('\\')) return false;
     return isWord(tok)||isDigit(tok)||isUnit(tok,unitRe); }

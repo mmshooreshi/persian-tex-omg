@@ -424,9 +424,14 @@
     while (i < tokens.length){
       const tk = tokens[i];
       if (!isCandidateStart(tk, units)){ out.push(tk.t); i++; continue; }
-      let j = i, saw = isLatinWord(tokens[j]) || isUnit(tokens[j], units);
+      let j = i, saw = isWord(tokens[j]) || isUnit(tokens[j], units);
+
       while (j+1 < tokens.length && isPhraseToken(tokens[j+1], units)){
-        j++; if (isLatinWord(tokens[j]) || isUnit(tokens[j], units)) saw = true;
+        j++; 
+        // if (isLatinWord(tokens[j]) || isUnit(tokens[j], units)) saw = true;
+        if (isWord(tokens[j]) || isUnit(tokens[j], units) || isDigit(tokens[j])) saw = true;
+
+
       }
       while (j > i && isJoiner(tokens[j])) j--;
       if (!saw){ out.push(tokens[i].t); i++; continue; }
@@ -445,21 +450,62 @@
   function findMathRanges(s){ const res=[]; scanPairs(s,/\$\$/g,/\$\$/g,res); scanPairs(s,/\$/g,/\$/g,res,true); scanPairs(s,/\\\(/g,/\\\)/g,res); scanPairs(s,/\\\[/g,/\\\]/g,res); return res; }
   function findEnvRanges(s, envs){ const res=[]; for(const e of envs){ const re=new RegExp(String.raw`\\begin\{${escapeRx(e)}\}([\s\S]*?)\\end\{${escapeRx(e)}\}`,'g'); let m; while((m=re.exec(s))) res.push([m.index, m.index+m[0].length]); } return res; }
   function findProtectedCommandArgRanges(s){
-    const one = ['url','path','label','ref','cite','includegraphics','input','include','bibliography','bibliographystyle'];
+    const one = ['setlatintextfont','usepackage','settextfont','documentclass','end','begin','url','path','label','ref','cite','includegraphics','input','include','bibliography','bibliographystyle'];
     const first = ['href']; const res=[];
     function matchBraces(str,pos){ if(str[pos]!=='{') return [pos,false]; let d=0; for(let i=pos;i<str.length;i++){ if(str[i]==='\\'){i++;continue;} if(str[i]==='{') d++; else if(str[i]==='}'){ d--; if(d===0) return [i,true]; } } return [pos,false]; }
-    function scan(cmd, all=true){ const re=new RegExp(String.raw`\\${escapeRx(cmd)}\s*(\[[^\]]*\]\s*)*`,'g'); let m; while((m=re.exec(s))){ let p=re.lastIndex,a=0; for(let k=0;k<6;k++){ while(p<s.length && /\s/.test(s[p])) p++; if(s[p]!=='{') break; const [e,ok]=matchBraces(s,p); if(!ok) break; if(all || a===0) res.push([p,e+1]); a++; p=e+1; if(!all) break; } } }
+    // function scan(cmd, all=true){ const re=new RegExp(String.raw`\\${escapeRx(cmd)}\s*(\[[^\]]*\]\s*)*`,'g'); let m; while((m=re.exec(s))){ let p=re.lastIndex,a=0; for(let k=0;k<6;k++){ while(p<s.length && /\s/.test(s[p])) p++; if(s[p]!=='{') break; const [e,ok]=matchBraces(s,p); if(!ok) break; if(all || a===0) res.push([p,e+1]); a++; p=e+1; if(!all) break; } } }
+    function scan(cmd, all=true){
+  // Match command like \documentclass, \usepackage, \setlatintextfont, etc.
+  const re=new RegExp(String.raw`\\${escapeRx(cmd)}\s*`,'g');
+  let m;
+  while((m=re.exec(s))){
+    let p = re.lastIndex;
+
+    // --- 1) Skip optional argument [ ... ] if present ---
+    while (p < s.length && /\s/.test(s[p])) p++;
+    if (s[p] === '[') {
+      let depth = 0, start = p;
+      for (; p < s.length; p++) {
+        if (s[p] === '[') depth++;
+        else if (s[p] === ']') {
+          depth--;
+          if (depth === 0) { 
+            res.push([start, p+1]); // mark [ ... ] as protected
+            p++; 
+            break; 
+          }
+        }
+      }
+    }
+
+    // --- 2) Skip mandatory braces { ... } ---
+    let a=0;
+    for(let k=0;k<6;k++){
+      while(p<s.length && /\s/.test(s[p])) p++;
+      if(s[p] !== '{') break;
+      const [e,ok] = matchBraces(s,p);
+      if(!ok) break;
+      if(all || a===0) res.push([p,e+1]);
+      a++;
+      p = e+1;
+      if(!all) break;
+    }
+  }
+}
+
     one.forEach(c=>scan(c,true)); first.forEach(c=>scan(c,false)); return res;
   }
-  function findCommandRanges(s) {
+function findCommandRanges(s) {
   const res = [];
-  const re = /\\[a-zA-Z@]+(\s*\[[^\]]*\])?(\s*\{[^}]*\})?/g;
+  // only mark the command word (e.g. \textbf), not its argument
+  const re = /\\[a-zA-Z@]+/g;
   let m;
   while ((m = re.exec(s))) {
     res.push([m.index, m.index + m[0].length]);
   }
   return res;
 }
+
 
   function findExistingLRRanges(s){
     const res=[]; const re=/\\lr\s*\{/g; let m;
@@ -470,7 +516,16 @@
   function escapeRx(x){ return x.replace(/[-/\\^$*+?.()|[\]{}]/g,'\\$&'); }
 
   // ---------- Tokenizer ----------
-  function tokenize(s){ const arr=[]; const re=/([\p{Script=Latin}][\p{Script=Latin}\d_\-\/+\.]*|[\p{Nd}]+(?:[.,:][\p{Nd}]+)*|[~\-–\/:+]|[ \t\r\n]+|.)/gu; let m; while((m=re.exec(s))) arr.push({t:m[0]}); return arr; }
+  
+function tokenize(s) {
+  const arr = [];
+  const re = /(°[CF]|~?(?:[\p{Script=Latin}\p{Script=Greek}][\p{Script=Latin}\p{Script=Greek}\d_\-\/+\.°μ]*)|~?-?\d+(?:[.,:]\d+)*|[\-–\/:+]|[ \t\r\n]+|.)/gu;
+
+  let m;
+  while ((m = re.exec(s))) arr.push({ t: m[0] });
+  return arr;
+}
+
 //   function buildUnitRegex(units){ const esc=units.map(u=>u.replace(/[-/\\^$*+?.()|[\]{}]/g,'\\$&')); return new RegExp(`^(?:${esc.join('|')})$`,'iu'); }
 function buildUnitRegex() {
   const units = [
@@ -483,15 +538,20 @@ function buildUnitRegex() {
 }
   
 function isLatinWord(tok){ return /^[\p{Script=Latin}][\p{Script=Latin}\d_\-\/+\.]*$/u.test(tok.t); }
-  function isDigit(tok){ return /^[\p{Nd}]+(?:[.,:][\p{Nd}]+)*$/u.test(tok.t); }
+//   function isDigit(tok){ return /^[\p{Nd}]+(?:[.,:][\p{Nd}]+)*$/u.test(tok.t); }
+  function isDigit(tok){ return /^~?-?[\p{Nd}]+(?:[.,:]\d+)*$/u.test(tok.t); }
+
   function isJoiner(tok){ return /^[~\-–\/:+]$/.test(tok.t) || /^[ \t\r\n]+$/.test(tok.t); }
   function isUnit(tok,unitRe){ return unitRe.test(tok.t); }
-  function isPhraseToken(tok,unitRe){ return isLatinWord(tok)||isDigit(tok)||isUnit(tok,unitRe)||isJoiner(tok); }
+  function isPhraseToken(tok,unitRe){ return isWord(tok)||isDigit(tok)||isUnit(tok,unitRe)||isJoiner(tok); }
   function isCandidateStart(tok,unitRe){ 
     if (tok.t.startsWith('\\')) return false;
-    return isLatinWord(tok)||isDigit(tok)||isUnit(tok,unitRe); }
+    return isWord(tok)||isDigit(tok)||isUnit(tok,unitRe); }
   function normalizeChem(text){ return text.replace(/\b([A-Z][a-z]?)(\d+)\b/g,(_,e,n)=>`${e}$_${n}$`); }
 })();
+function isWord(tok){ 
+  return /^~?(?:[\p{Script=Latin}\p{Script=Greek}][\p{Script=Latin}\p{Script=Greek}\d_\-\/+\.°μ]*)$/u.test(tok.t); 
+}
 
 
 

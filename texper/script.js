@@ -2,8 +2,10 @@
 (() => {
   // ---------- DOM ----------
   const $ = (q) => document.querySelector(q);
+  
   const $in = $('#input'), $out = $('#output'), $log = $('#log');
   const $runClient = $('#runClient'), $runEdge = $('#runEdge'), $applyEdits = $('#applyEdits');
+  const $reverseText = $('#reverseText');
   const $copyInput = $('#copyInput'), $copyOutput = $('#copyOutput');
   const $units = $('#units'), $debug = $('#debug'), $dry = $('#dryrun'), $chem = $('#chem'), $live = $('#live');
 
@@ -17,6 +19,53 @@
   const $rName = $('#rName'), $rEnabled = $('#rEnabled'), $rPattern = $('#rPattern'), $rReplace = $('#rReplace'),
         $rRegex = $('#rRegex'), $rFlags = $('#rFlags'), $rPhase = $('#rPhase'), $rScope = $('#rScope');
   const $addRule = $('#addRule'), $updateRule = $('#updateRule'), $clearForm = $('#clearForm');
+
+  // Helper to unwrap all \lr{...} (handles nesting)
+function unwrapLR(s) {
+  function inner(str, i = 0) {
+    let out = '';
+    while (i < str.length) {
+      if (str[i] === '\\' && str.slice(i, i + 3) === '\\lr') {
+        i += 3;
+        // skip optional spaces
+        while (i < str.length && /\s/.test(str[i])) i++;
+        if (str[i] !== '{') { out += '\\lr'; continue; }
+        // parse balanced { ... }
+        let depth = 0, start = i + 1, k = i;
+        for (; k < str.length; k++) {
+          if (str[k] === '\\') { k++; continue; }
+          if (str[k] === '{') depth++;
+          else if (str[k] === '}') {
+            depth--;
+            if (depth === 0) break;
+          }
+        }
+        if (depth !== 0 || str[k] !== '}') { out += '\\lr'; i++; continue; }
+        const content = str.slice(start, k);
+        out += inner(content, 0); // recursively unwrap nested \lr
+        i = k + 1;
+      } else {
+        out += str[i++];
+      }
+    }
+    return out;
+  }
+  return inner(s, 0);
+}
+
+// Click handler (place near other event listeners)
+$reverseText.addEventListener('click', () => {
+  const src = $out.textContent || '';
+  const plain = unwrapLR(src);
+  $in.value = plain;               // write into left pane
+  if ($live.checked) runClient();  // optional: re-parse if Live mode is on
+});
+
+
+
+
+
+
 
   // ---------- Logger ----------
   const logger = {
@@ -584,7 +633,7 @@ function normalizePersianDigits(s) {
 function tokenize(s) {
   const arr = [];
   // Add subscript token FIRST so it’s matched atomically
-  const re = /(\$_\{?\d+\}?\$)|(°[CF]|~?(?:[\p{Script=Latin}\p{Script=Greek}][\p{Script=Latin}\p{Script=Greek}\d_\-\/+\.°μ–—]*)|~?-?[0-9۰-۹٠-٩]+(?:[.,٫:][0-9۰-۹٠-٩]+)*|[–—\-\/:+]|[ \t\r\n]+|.)/gu;
+  const re = /(\$_\{?\d+\}?\$)|(°[CF]|~?(?:[\p{Script=Latin}\p{Script=Greek}µ][\p{Script=Latin}\p{Script=Greek}\d_\-\/+\.°μ–—]*)|~?-?[0-9۰-۹٠-٩]+(?:[.,٫:][0-9۰-۹٠-٩]+)*|[–—\-\/:+]|[ \t\r\n]+|.)/gu;
   let m;
   while ((m = re.exec(s))) arr.push({ t: m[0] });
   return arr;
@@ -599,7 +648,7 @@ function isPhraseToken(tok, unitRe){
 //   function buildUnitRegex(units){ const esc=units.map(u=>u.replace(/[-/\\^$*+?.()|[\]{}]/g,'\\$&')); return new RegExp(`^(?:${esc.join('|')})$`,'iu'); }
 function buildUnitRegex() {
   const units = [
-    "°C","°F","rpm","V","A","mA","μL","uL","mL","L","mg","g","kg",
+    "µL","µg","°C","°F","rpm","V","A","mA","uL","mL","L","mg","g","kg",
     "nm","μm","um","mm","cm","h","hr","min","s","kDa","Da",
     "OD","UV","DNA","RNA","PCR","BHI","TSB","TSA","PDA","YPD","YPG",
     "SDS-PAGE","Log","APS","TEMED","EtBr","Western","Blot"
